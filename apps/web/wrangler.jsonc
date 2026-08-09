@@ -71,6 +71,6 @@
 		{
 			"pattern": "www.o-c.do",
 			"custom_domain": true,
-		}
+		},
 	]
 }
