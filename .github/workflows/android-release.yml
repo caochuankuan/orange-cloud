@@ -1,8 +1,6 @@
 name: Build Android release APKs
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -35,7 +33,7 @@ jobs:
 
       - name: Build release APKs
         working-directory: apps/android
-        run: ./gradlew :app:assemblePlayRelease :app:assembleOssRelease :app:assembleDirectRelease --no-daemon
+        run: ./gradlew :app:assembleOssRelease --no-daemon
 
       - name: Generate ephemeral signing key
         shell: bash
