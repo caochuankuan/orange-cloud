@@ -1,0 +1,110 @@
+name: Build Android release APKs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set release names
+        shell: bash
+        run: |
+          app_name="${GITHUB_REPOSITORY#*/}"
+          app_slug="$(echo "$app_name" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
+          app_slug="${app_slug%-}"
+          echo "APP_NAME=$app_name" >> "$GITHUB_ENV"
+          echo "APP_SLUG=$app_slug" >> "$GITHUB_ENV"
+
+      - name: Build release APKs
+        working-directory: apps/android
+        run: ./gradlew :app:assemblePlayRelease :app:assembleOssRelease :app:assembleDirectRelease --no-daemon
+
+      - name: Generate ephemeral signing key
+        shell: bash
+        run: |
+          store_password="$(openssl rand -hex 24)"
+          key_password="$(openssl rand -hex 24)"
+          keytool -genkeypair \
+            -keystore "$RUNNER_TEMP/$APP_SLUG-release.jks" \
+            -storepass "$store_password" \
+            -keypass "$key_password" \
+            -alias "$APP_SLUG" \
+            -keyalg RSA \
+            -keysize 4096 \
+            -storetype JKS \
+            -validity 1 \
+            -dname "CN=$APP_NAME CI, O=$APP_NAME, C=CN"
+          {
+            echo "SIGNING_STORE_FILE=$RUNNER_TEMP/$APP_SLUG-release.jks"
+            echo "SIGNING_STORE_PASSWORD=$store_password"
+            echo "SIGNING_KEY_ALIAS=$APP_SLUG"
+            echo "SIGNING_KEY_PASSWORD=$key_password"
+          } >> "$GITHUB_ENV"
+
+      - name: Sign and stage APKs
+        shell: bash
+        working-directory: apps/android
+        run: |
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          mkdir -p dist
+          shopt -s nullglob
+          unsigned_apks=(app/build/outputs/apk/*/*-release-unsigned.apk)
+          if [ "${#unsigned_apks[@]}" -eq 0 ]; then
+            echo "No unsigned release APKs found."
+            find app/build/outputs/apk -type f -name '*.apk' -print
+            exit 1
+          fi
+          for unsigned_apk in "${unsigned_apks[@]}"; do
+            apk_name="$(basename "$unsigned_apk")"
+            flavor="${apk_name#app-}"
+            flavor="${flavor%-release-unsigned.apk}"
+            aligned_apk="$RUNNER_TEMP/$APP_SLUG-$flavor-aligned.apk"
+            signed_apk="dist/$APP_NAME-$flavor-release.apk"
+            "${build_tools}/zipalign" -p -f 4 "$unsigned_apk" "$aligned_apk"
+            "${build_tools}/apksigner" sign \
+              --ks "$SIGNING_STORE_FILE" \
+              --ks-pass "pass:$SIGNING_STORE_PASSWORD" \
+              --ks-key-alias "$SIGNING_KEY_ALIAS" \
+              --key-pass "pass:$SIGNING_KEY_PASSWORD" \
+              --out "$signed_apk" \
+              "$aligned_apk"
+            "${build_tools}/apksigner" verify --verbose --print-certs "$signed_apk"
+            sha256sum "$signed_apk" > "$signed_apk.sha256"
+          done
+
+      - name: Upload release APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.APP_NAME }}-release-${{ github.run_number }}
+          path: apps/android/dist/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub release
+        working-directory: apps/android
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \
+            dist/*.apk dist/*.apk.sha256 \
+            --target "$GITHUB_SHA" \
+            --title "$APP_NAME Build #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \
+            --notes "Automatically built from commit $GITHUB_SHA. These APKs use an ephemeral CI signature and cannot update APKs from other builds."
