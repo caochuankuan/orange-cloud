@@ -64,7 +64,7 @@ jobs:
           build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           mkdir -p dist
           shopt -s nullglob
-          unsigned_apks=(app/build/outputs/apk/*/*-release-unsigned.apk)
+          unsigned_apks=(app/build/outputs/apk/*/*/*-release-unsigned.apk)
           if [ "${#unsigned_apks[@]}" -eq 0 ]; then
             echo "No unsigned release APKs found."
             find app/build/outputs/apk -type f -name '*.apk' -print
