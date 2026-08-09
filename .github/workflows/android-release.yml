@@ -33,7 +33,7 @@ jobs:
 
       - name: Build release APKs
         working-directory: apps/android
-        run: ./gradlew :app:assembleOssRelease --no-daemon
+        run: ./gradlew :app:assembleOssRelease --no-daemon -POAUTH_CLIENT_ID=4440dfe1c7220fe1c2606f3658a1e634
 
       - name: Generate ephemeral signing key
         shell: bash

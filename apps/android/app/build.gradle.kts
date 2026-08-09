@@ -11,7 +11,7 @@ plugins {
 }
 
 // 官方 OAuth Client（PKCE 公开客户端，非机密；与 iOS OAuthConfig.swift 同值）。
-// oss 自编译者在 local.properties 覆盖 OAUTH_CLIENT_ID 并自建回调，官方 Client 不向第三方构建开放。
+// OSS 自编译者在 local.properties 或 -POAUTH_CLIENT_ID 中注入自己的 Client。
 val officialOAuthClientId = "102240eb9095a1965ee11813ef4788cd"
 val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
@@ -73,7 +73,7 @@ android {
             versionNameSuffix = "-oss"
             buildConfigField("boolean", "IS_OSS", "true")
             buildConfigField("boolean", "IS_DIRECT", "false")
-            // oss 默认不带官方 Client；自编译者用 local.properties 填
+            // OSS 默认不带 Client；自编译者用 local.properties 或 -P 注入
             buildConfigField("String", "OAUTH_CLIENT_ID", "\"${oauthClientId("")}\"")
             // oss 不带官方 FCM 配置（即便 local.properties 有也清空，避免官方推送凭证进开源构建）
             buildConfigField("String", "FCM_PROJECT_ID", "\"\"")
